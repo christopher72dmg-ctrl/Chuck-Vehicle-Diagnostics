@@ -50,6 +50,9 @@ private fun ChuckApp(context: Context) {
     var codeBusy by remember { mutableStateOf(false) }
     var codeStatus by remember { mutableStateOf("Stored trouble codes have not been read.") }
     var storedCodes by remember { mutableStateOf(emptyList<String>()) }
+    var vinBusy by remember { mutableStateOf(false) }
+    var vinStatus by remember { mutableStateOf("Vehicle VIN has not been requested.") }
+    var vinValue by remember { mutableStateOf("") }
     MaterialTheme(colorScheme = darkColorScheme(
         background = Ink, surface = Panel, primary = Accent,
         onBackground = Color.White, onSurface = Color.White
@@ -133,6 +136,26 @@ private fun ChuckApp(context: Context) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (codeBusy) "READING CODES…" else "READ STORED TROUBLE CODES") }
                     Text("Read-only: this reads Mode 03 codes. It cannot erase codes.", color = Muted, fontSize = 11.sp)
+                    OutlinedButton(
+                        enabled = adapterConnected && !vinBusy,
+                        onClick = {
+                            vinBusy = true
+                            vinStatus = "Requesting VIN from the vehicle ECU…"
+                            thread(name = "ChuckReadVin") {
+                                val result = WifiElm327.readVin(context)
+                                Handler(Looper.getMainLooper()).post {
+                                    vinBusy = false
+                                    vinValue = result.vin
+                                    vinStatus = result.message
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (vinBusy) "READING VIN…" else "IDENTIFY VEHICLE — READ VIN") }
+                    Text(vinStatus, color = Muted, fontSize = 11.sp)
+                    if (vinValue.isNotBlank()) {
+                        Text(vinValue, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
