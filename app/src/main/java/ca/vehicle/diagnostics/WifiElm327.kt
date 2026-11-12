@@ -24,6 +24,12 @@ data class ElmLiveDataResult(
     val volts: String = "—"
 )
 
+data class ElmTroubleCodeResult(
+    val success: Boolean,
+    val message: String,
+    val codes: List<String> = emptyList()
+)
+
 object WifiElm327 {
     private fun wifiNetwork(context: Context) =
         (context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
@@ -110,6 +116,67 @@ object WifiElm327 {
         } catch (e: Exception) {
             ElmLiveDataResult(false, "Live-data request failed: ${e.message ?: "connection error"}")
         }
+    }
+
+
+    // Mode 03 only reads stored emissions-related trouble codes. No clear/reset command is sent.
+    fun readStoredCodes(context: Context): ElmTroubleCodeResult {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.allNetworks.firstOrNull {
+            cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        } ?: return ElmTroubleCodeResult(false, "Connect to the adapter's Wi-Fi first.")
+        return try {
+            network.socketFactory.createSocket().use { socket ->
+                socket.connect(InetSocketAddress("192.168.0.10", 35000), 2500)
+                socket.soTimeout = 2500
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val output = socket.getOutputStream()
+                exchange(reader, output, "ATZ")
+                exchange(reader, output, "ATE0")
+                exchange(reader, output, "ATL0")
+                exchange(reader, output, "ATS0")
+                exchange(reader, output, "ATH0")
+                exchange(reader, output, "ATSP0")
+                val response = exchange(reader, output, "03")
+                val clean = response.uppercase().filter { it in "0123456789ABCDEF" }
+                val start = clean.indexOf("43")
+                if (start < 0) {
+                    val noCodes = response.contains("NO DATA", true) || response.contains("43", true) && clean.length <= 2
+                    ElmTroubleCodeResult(
+                        noCodes,
+                        if (noCodes) "The ECU reports no stored Mode 03 codes." else "No Mode 03 code response was recognized. Raw response: ${response.ifBlank { "(empty)" }}"
+                    )
+                } else {
+                    val data = clean.substring(start + 2)
+                    val found = mutableListOf<String>()
+                    var i = 0
+                    while (i + 4 <= data.length) {
+                        val a = data.substring(i, i + 2).toIntOrNull(16) ?: break
+                        val b = data.substring(i + 2, i + 4).toIntOrNull(16) ?: break
+                        i += 4
+                        if (a == 0 && b == 0) continue
+                        found += decodeDtc(a, b)
+                    }
+                    ElmTroubleCodeResult(true, if (found.isEmpty()) "No stored codes were reported." else "${found.size} stored code(s) read. Nothing was cleared.", found)
+                }
+            }
+        } catch (e: Exception) {
+            ElmTroubleCodeResult(false, "Code read failed: ${e.message ?: "connection error"}")
+        }
+    }
+
+    private fun decodeDtc(a: Int, b: Int): String {
+        val system = when ((a shr 6) and 0x03) {
+            0 -> "P"
+            1 -> "C"
+            2 -> "B"
+            else -> "U"
+        }
+        val second = (a shr 4) and 0x03
+        return system + second.toString() +
+            ((a shr 0) and 0x0F).toString(16).uppercase() +
+            ((b shr 4) and 0x0F).toString(16).uppercase() +
+            (b and 0x0F).toString(16).uppercase()
     }
 
     private fun responseBytes(response: String, header: String, byteCount: Int): IntArray? {
