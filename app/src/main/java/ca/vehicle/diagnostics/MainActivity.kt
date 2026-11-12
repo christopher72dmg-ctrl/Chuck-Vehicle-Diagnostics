@@ -42,6 +42,11 @@ private fun ChuckApp(context: Context) {
     var adapterDetails by remember { mutableStateOf("Connect to the adapter's Wi-Fi, then run the read-only connection test.") }
     var adapterBusy by remember { mutableStateOf(false) }
     var adapterConnected by remember { mutableStateOf(false) }
+    var liveBusy by remember { mutableStateOf(false) }
+    var liveStatus by remember { mutableStateOf("Live readings have not been requested yet.") }
+    var rpmValue by remember { mutableStateOf("—") }
+    var coolantValue by remember { mutableStateOf("—") }
+    var voltsValue by remember { mutableStateOf("—") }
     MaterialTheme(colorScheme = darkColorScheme(
         background = Ink, surface = Panel, primary = Accent,
         onBackground = Color.White, onSurface = Color.White
@@ -89,12 +94,31 @@ private fun ChuckApp(context: Context) {
                     ) { Text(if (adapterBusy) "TESTING ADAPTER…" else "TEST WI-FI ADAPTER") }
                     Text(adapterDetails, color = if (adapterConnected) Accent else Muted, fontSize = 12.sp)
                     Text("Read-only test. No codes are erased and no vehicle settings are changed.", color = Muted, fontSize = 11.sp)
+                    Button(
+                        enabled = adapterConnected && !liveBusy,
+                        onClick = {
+                            liveBusy = true
+                            liveStatus = "Requesting live values from the vehicle ECU…"
+                            thread(name = "ChuckLiveData") {
+                                val result = WifiElm327.readLiveData(context)
+                                Handler(Looper.getMainLooper()).post {
+                                    liveBusy = false
+                                    rpmValue = result.rpm
+                                    coolantValue = result.coolant
+                                    voltsValue = result.volts
+                                    liveStatus = result.message
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (liveBusy) "READING LIVE DATA…" else "READ LIVE DATA") }
+                    Text(liveStatus, color = Muted, fontSize = 11.sp)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetricCard("ENGINE RPM", "—", Modifier.weight(1f))
-                MetricCard("COOLANT", "—", Modifier.weight(1f))
-                MetricCard("SYSTEM VOLTS", "—", Modifier.weight(1f))
+                MetricCard("ENGINE RPM", rpmValue, Modifier.weight(1f))
+                MetricCard("COOLANT", coolantValue, Modifier.weight(1f))
+                MetricCard("SYSTEM VOLTS", voltsValue, Modifier.weight(1f))
             }
             Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
