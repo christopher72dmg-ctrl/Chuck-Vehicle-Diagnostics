@@ -30,6 +30,12 @@ data class ElmTroubleCodeResult(
     val codes: List<String> = emptyList()
 )
 
+data class ElmVinResult(
+    val success: Boolean,
+    val message: String,
+    val vin: String = ""
+)
+
 object WifiElm327 {
     private fun wifiNetwork(context: Context) =
         (context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager)
@@ -118,6 +124,52 @@ object WifiElm327 {
         }
     }
 
+
+
+    // Mode 09 PID 02 requests the vehicle identification number. Read-only.
+    fun readVin(context: Context): ElmVinResult {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.allNetworks.firstOrNull {
+            cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        } ?: return ElmVinResult(false, "Connect to the adapter's Wi-Fi first.")
+        return try {
+            network.socketFactory.createSocket().use { socket ->
+                socket.connect(InetSocketAddress("192.168.0.10", 35000), 2500)
+                socket.soTimeout = 3500
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val output = socket.getOutputStream()
+                exchange(reader, output, "ATZ")
+                exchange(reader, output, "ATE0")
+                exchange(reader, output, "ATL0")
+                exchange(reader, output, "ATS1")
+                exchange(reader, output, "ATH0")
+                exchange(reader, output, "ATSP0")
+                exchange(reader, output, "ATCAF1")
+                val response = exchange(reader, output, "0902")
+                val vin = extractVin(response)
+                if (vin != null) ElmVinResult(true, "VIN received from the vehicle ECU.", vin)
+                else ElmVinResult(false, "The ECU or adapter did not provide a readable VIN. Raw response: ${response.ifBlank { "(empty)" }}")
+            }
+        } catch (e: Exception) {
+            ElmVinResult(false, "VIN request failed: ${e.message ?: "connection error"}")
+        }
+    }
+
+    private fun extractVin(response: String): String? {
+        val hex = response.uppercase().filter { it in "0123456789ABCDEF" }
+        val marker = hex.indexOf("4902")
+        if (marker < 0) return null
+        val payload = hex.substring(marker + 4)
+        // Common ELM response contains record byte 01 before the 17 VIN characters.
+        val candidates = listOf(payload.removePrefix("01"), payload)
+        for (candidate in candidates) {
+            val decoded = candidate.chunked(2).takeWhile { it.length == 2 }
+                .mapNotNull { it.toIntOrNull(16)?.toChar() }.joinToString("")
+            val match = Regex("[A-HJ-NPR-Z0-9]{17}").find(decoded)?.value
+            if (match != null) return match
+        }
+        return null
+    }
 
     // Mode 03 only reads stored emissions-related trouble codes. No clear/reset command is sent.
     fun readStoredCodes(context: Context): ElmTroubleCodeResult {
