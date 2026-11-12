@@ -25,6 +25,9 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.Executors
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
 class VinScannerActivity : Activity() {
@@ -222,6 +225,40 @@ object VinTools {
         val remainder = sum % 11
         val expected = if (remainder == 10) 'X' else ('0'.code + remainder).toChar()
         return vin[8] == expected
+    }
+
+    fun decodeOnline(vin: String): String? {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL("https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/$vin?format=json").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 4500
+                readTimeout = 4500
+                requestMethod = "GET"
+            }
+            if (connection.responseCode !in 200..299) return null
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            val result = JSONObject(body).optJSONArray("Results")?.optJSONObject(0) ?: return null
+            fun value(key: String): String {
+                val raw = result.optString(key, "").trim()
+                return if (raw.isBlank() || raw.equals("Not Applicable", true) || raw.equals("0", true)) "" else raw
+            }
+            val year = value("ModelYear")
+            val make = value("Make")
+            val model = value("Model")
+            if (year.isBlank() && make.isBlank() && model.isBlank()) return null
+            val title = listOf(year, make, model).filter { it.isNotBlank() }.joinToString(" ")
+            val engine = listOf(
+                value("DisplacementL").takeIf { it.isNotBlank() }?.let { "$it L" } ?: "",
+                value("EngineCylinders").takeIf { it.isNotBlank() }?.let { "$it-cylinder" } ?: "",
+                value("EngineModel")
+            ).filter { it.isNotBlank() }.joinToString(" ")
+            val drive = value("DriveType")
+            listOf(title, engine, drive).filter { it.isNotBlank() }.joinToString(" • ")
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection?.disconnect()
+        }
     }
 
     fun summary(vin: String): String {
