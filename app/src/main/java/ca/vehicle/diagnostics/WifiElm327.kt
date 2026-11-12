@@ -156,19 +156,33 @@ object WifiElm327 {
     }
 
     private fun extractVin(response: String): String? {
-        val hex = response.uppercase().filter { it in "0123456789ABCDEF" }
-        val marker = hex.indexOf("4902")
-        if (marker < 0) return null
-        val payload = hex.substring(marker + 4)
-        // Common ELM response contains record byte 01 before the 17 VIN characters.
-        val candidates = listOf(payload.removePrefix("01"), payload)
-        for (candidate in candidates) {
-            val decoded = candidate.chunked(2).takeWhile { it.length == 2 }
-                .mapNotNull { it.toIntOrNull(16)?.toChar() }.joinToString("")
-            val match = Regex("[A-HJ-NPR-Z0-9]{17}").find(decoded)?.value
-            if (match != null) return match
+        // Some Wi-Fi ELM adapters print multi-frame CAN data as rows such as
+        // "014 0: 49 02 01 32 ..." and "1: 52 ...". Extract byte-sized
+        // hex tokens so row counters and adapter labels cannot contaminate the VIN.
+        val byteTokens = Regex("(?i)(?<![A-F0-9])([A-F0-9]{2})(?![A-F0-9])")
+            .findAll(response)
+            .map { it.groupValues[1].uppercase() }
+            .toList()
+
+        fun findVin(bytes: List<String>): String? {
+            val marker = bytes.indices.firstOrNull { i ->
+                i + 2 < bytes.size && bytes[i] == "49" && bytes[i + 1] == "02"
+            } ?: return null
+            val payload = bytes.drop(marker + 3) // skip 49 02 and VIN record number 01
+            val decoded = payload.mapNotNull { it.toIntOrNull(16)?.toChar() }.joinToString("")
+            return Regex("[A-HJ-NPR-Z0-9]{17}").find(decoded)?.value
         }
-        return null
+
+        findVin(byteTokens)?.let { return it }
+
+        // Fallback for adapters that return a compact, unspaced hex response.
+        val compact = response.uppercase().filter { it in "0123456789ABCDEF" }
+        val marker = compact.indexOf("4902")
+        if (marker < 0) return null
+        val payload = compact.substring(marker + 6)
+        val decoded = payload.chunked(2).takeWhile { it.length == 2 }
+            .mapNotNull { it.toIntOrNull(16)?.toChar() }.joinToString("")
+        return Regex("[A-HJ-NPR-Z0-9]{17}").find(decoded)?.value
     }
 
     // Mode 03 only reads stored emissions-related trouble codes. No clear/reset command is sent.
