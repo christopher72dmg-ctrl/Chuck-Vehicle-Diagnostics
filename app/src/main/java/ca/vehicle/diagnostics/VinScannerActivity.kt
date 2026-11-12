@@ -2,6 +2,7 @@ package ca.vehicle.diagnostics
 
 import android.Manifest
 import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -30,7 +31,7 @@ import java.net.URL
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 
-class VinScannerActivity : Activity() {
+class VinScannerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_VIN = "ca.vehicle.diagnostics.EXTRA_VIN"
         private const val CAMERA_REQUEST = 7102
