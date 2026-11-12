@@ -1,5 +1,6 @@
 package ca.vehicle.diagnostics
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,7 +31,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ChuckApp() {
+private fun ChuckApp(context: Context) {
     var complaint by remember { mutableStateOf("") }
     var investigation by remember { mutableStateOf("Tell me what the vehicle is doing. We'll work through the evidence before suggesting parts.") }
     MaterialTheme(colorScheme = darkColorScheme(
@@ -50,6 +51,7 @@ private fun ChuckApp() {
                     Text("●  NOT CONNECTED", color = Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
                 }
             }
+            Button(onClick = { context.startActivity(Intent(context, DeviceBenchActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("RUN DEVICE BENCH TEST") }
             Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("VEHICLE", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
