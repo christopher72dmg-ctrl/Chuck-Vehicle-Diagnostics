@@ -145,7 +145,7 @@ object WifiElm327 {
                 exchange(reader, output, "ATH0")
                 exchange(reader, output, "ATSP0")
                 exchange(reader, output, "ATCAF1")
-                val response = exchange(reader, output, "0902")
+                val response = exchange(reader, output, "0902", timeoutMs = 12000)
                 val vin = extractVin(response)
                 if (vin != null) ElmVinResult(true, "VIN received from the vehicle ECU.", vin)
                 else ElmVinResult(false, "The ECU or adapter did not provide a readable VIN. Raw response: ${response.ifBlank { "(empty)" }}")
@@ -243,11 +243,11 @@ object WifiElm327 {
         }.toIntArray()
     }
 
-    private fun exchange(reader: BufferedReader, output: OutputStream, command: String): String {
+    private fun exchange(reader: BufferedReader, output: OutputStream, command: String, timeoutMs: Long = 1400): String {
         output.write((command + "\r").toByteArray(Charsets.US_ASCII))
         output.flush()
         val result = StringBuilder()
-        val deadline = System.currentTimeMillis() + 1400
+        val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             try {
                 if (!reader.ready()) {
