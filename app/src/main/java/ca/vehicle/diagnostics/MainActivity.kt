@@ -1,11 +1,15 @@
 package ca.vehicle.diagnostics
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -52,7 +56,19 @@ private fun ChuckApp(context: Context) {
     var storedCodes by remember { mutableStateOf(emptyList<String>()) }
     var vinBusy by remember { mutableStateOf(false) }
     var vinStatus by remember { mutableStateOf("Vehicle VIN has not been requested.") }
-    var vinValue by remember { mutableStateOf("") }
+    val prefs = remember { context.getSharedPreferences("chuck_vehicle", Context.MODE_PRIVATE) }
+    var vinValue by remember { mutableStateOf(prefs.getString("vin", "") ?: "") }
+    var vinSource by remember { mutableStateOf(if (vinValue.isBlank()) "" else "SAVED • RECHECK WHEN CONNECTED") }
+    val scannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val scanned = result.data?.getStringExtra(VinScannerActivity.EXTRA_VIN).orEmpty()
+            if (VinTools.isValidVin(scanned)) {
+                vinValue = scanned
+                vinSource = "SCANNED • VERIFIED"
+                prefs.edit().putString("vin", scanned).apply()
+            }
+        }
+    }
     MaterialTheme(colorScheme = darkColorScheme(
         background = Ink, surface = Panel, primary = Accent,
         onBackground = Color.White, onSurface = Color.White
@@ -70,6 +86,33 @@ private fun ChuckApp(context: Context) {
                     Text(if (adapterConnected) "●  ADAPTER RESPONDING" else "●  $adapterStatus", color = if (adapterConnected) Accent else Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
                 }
             }
+            if (vinValue.isNotBlank()) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("VEHICLE IDENTIFICATION", color = Accent, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                            Text(vinSource, color = Muted, fontSize = 9.sp)
+                        }
+                        Text(VinTools.summary(vinValue), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text(vinValue, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(ClipData.newPlainText("VIN", vinValue))
+                            }, modifier = Modifier.weight(1f)) { Text("COPY VIN") }
+                            Button(onClick = {
+                                val all = VinTools.summary(vinValue) + "\nVIN: " + vinValue
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(ClipData.newPlainText("Vehicle details", all))
+                            }, modifier = Modifier.weight(1f)) { Text("COPY ALL") }
+                        }
+                    }
+                }
+            }
+            OutlinedButton(
+                onClick = { scannerLauncher.launch(Intent(context, VinScannerActivity::class.java)) },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("SCAN VIN / BARCODE / QR") }
             Button(onClick = { context.startActivity(Intent(context, DeviceBenchActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("RUN DEVICE BENCH TEST") }
             Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -145,7 +188,11 @@ private fun ChuckApp(context: Context) {
                                 val result = WifiElm327.readVin(context)
                                 Handler(Looper.getMainLooper()).post {
                                     vinBusy = false
-                                    vinValue = result.vin
+                                    if (VinTools.isValidVin(result.vin)) {
+                                        vinValue = result.vin
+                                        vinSource = "ECU • VERIFIED THIS SESSION"
+                                        prefs.edit().putString("vin", result.vin).apply()
+                                    }
                                     vinStatus = result.message
                                 }
                             }
@@ -153,9 +200,6 @@ private fun ChuckApp(context: Context) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (vinBusy) "READING VIN…" else "IDENTIFY VEHICLE — READ VIN") }
                     Text(vinStatus, color = Muted, fontSize = 11.sp)
-                    if (vinValue.isNotBlank()) {
-                        Text(vinValue, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
