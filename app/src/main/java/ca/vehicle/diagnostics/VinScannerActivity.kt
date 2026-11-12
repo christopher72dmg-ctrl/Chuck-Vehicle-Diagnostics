@@ -146,7 +146,7 @@ class VinScannerActivity : Activity() {
         val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
         val barcodeTask = barcodeScanner.process(image)
         val textTask = textRecognizer.process(image)
-        com.google.android.gms.tasks.Tasks.whenAllComplete<Any>(barcodeTask, textTask)
+        com.google.android.gms.tasks.Tasks.whenAllComplete(listOf(barcodeTask, textTask))
             .addOnCompleteListener {
                 try {
                     val barcodeVin = if (barcodeTask.isSuccessful) {
