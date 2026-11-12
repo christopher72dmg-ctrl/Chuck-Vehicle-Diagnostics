@@ -3,6 +3,8 @@ package ca.vehicle.diagnostics
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -18,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.concurrent.thread
 
 private val Ink = Color(0xFF101820)
 private val Panel = Color(0xFF1B2933)
@@ -35,6 +38,10 @@ class MainActivity : ComponentActivity() {
 private fun ChuckApp(context: Context) {
     var complaint by remember { mutableStateOf("") }
     var investigation by remember { mutableStateOf("Tell me what the vehicle is doing. We'll work through the evidence before suggesting parts.") }
+    var adapterStatus by remember { mutableStateOf("NOT TESTED") }
+    var adapterDetails by remember { mutableStateOf("Connect to the adapter's Wi-Fi, then run the read-only connection test.") }
+    var adapterBusy by remember { mutableStateOf(false) }
+    var adapterConnected by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = darkColorScheme(
         background = Ink, surface = Panel, primary = Accent,
         onBackground = Color.White, onSurface = Color.White
@@ -48,19 +55,40 @@ private fun ChuckApp(context: Context) {
                     Text("CHUCK", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Text("A better way to find the cause.", color = Muted, fontSize = 13.sp)
                 }
-                Surface(color = Color(0xFF493A22), shape = RoundedCornerShape(20.dp)) {
-                    Text("●  NOT CONNECTED", color = Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+                Surface(color = if (adapterConnected) Color(0xFF173D35) else Color(0xFF493A22), shape = RoundedCornerShape(20.dp)) {
+                    Text(if (adapterConnected) "●  ADAPTER RESPONDING" else "●  $adapterStatus", color = if (adapterConnected) Accent else Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
                 }
             }
             Button(onClick = { context.startActivity(Intent(context, DeviceBenchActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("RUN DEVICE BENCH TEST") }
             Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("VEHICLE", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("No vehicle identified", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Connect a Wi-Fi OBD adapter to begin. No readings are shown until data comes from the vehicle.", color = Muted, fontSize = 12.sp)
-                    OutlinedButton(onClick = { investigation = "Wi-Fi adapter support is planned. Connect the tablet to your ELM327 adapter's Wi-Fi network when it is available." }, modifier = Modifier.fillMaxWidth()) {
-                        Text("CONNECT VEHICLE")
-                    }
+                    Text("VEHICLE CONNECTION", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Wi-Fi ELM327 adapter", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Target: 192.168.0.10  •  Ports: 35000 / 23", color = Muted, fontSize = 12.sp)
+                    Button(
+                        enabled = !adapterBusy,
+                        onClick = {
+                            adapterBusy = true
+                            adapterStatus = "TESTING"
+                            adapterDetails = "Checking the Wi-Fi adapter and testing ELM communication…"
+                            thread(name = "ChuckElmProbe") {
+                                val result = WifiElm327.connectAndIdentify(context)
+                                Handler(Looper.getMainLooper()).post {
+                                    adapterBusy = false
+                                    adapterConnected = result.success
+                                    adapterStatus = if (result.success) "CONNECTED" else "NO RESPONSE"
+                                    adapterDetails = buildString {
+                                        append(result.message)
+                                        if (result.adapterInfo.isNotBlank()) append("\nAdapter: ${result.adapterInfo}")
+                                        if (result.supportedPids.isNotBlank()) append("\nSupported PID response: ${result.supportedPids}")
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (adapterBusy) "TESTING ADAPTER…" else "TEST WI-FI ADAPTER") }
+                    Text(adapterDetails, color = if (adapterConnected) Accent else Muted, fontSize = 12.sp)
+                    Text("Read-only test. No codes are erased and no vehicle settings are changed.", color = Muted, fontSize = 11.sp)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -89,7 +117,7 @@ private fun ChuckApp(context: Context) {
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallPanel("LIVE DATA", "Available after connection", Modifier.weight(1f))
+                SmallPanel("LIVE DATA", "Next: real sensor readings", Modifier.weight(1f))
                 SmallPanel("FAULT CODES", "Read before clearing", Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
