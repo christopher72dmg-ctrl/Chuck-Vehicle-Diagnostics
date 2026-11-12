@@ -60,6 +60,7 @@ private fun ChuckApp(context: Context) {
     var vinValue by remember { mutableStateOf(prefs.getString("vin", "") ?: "") }
     var vinSource by remember { mutableStateOf(if (vinValue.isBlank()) "" else "SAVED • RECHECK WHEN CONNECTED") }
     var vehicleSummary by remember { mutableStateOf(if (vinValue.isBlank()) "" else VinTools.summary(vinValue)) }
+    var showInfoDialog by remember { mutableStateOf(false) }
     fun lookupVehicleDetails(vin: String) {
         vehicleSummary = VinTools.summary(vin)
         thread(name = "ChuckVinLookup") {
@@ -93,9 +94,41 @@ private fun ChuckApp(context: Context) {
                     Text("CHUCK", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Text("A better way to find the cause.", color = Muted, fontSize = 13.sp)
                 }
-                Surface(color = if (adapterConnected) Color(0xFF173D35) else Color(0xFF493A22), shape = RoundedCornerShape(20.dp)) {
-                    Text(if (adapterConnected) "●  ADAPTER RESPONDING" else "●  $adapterStatus", color = if (adapterConnected) Accent else Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+                IconButton(onClick = { showInfoDialog = true }) {
+                    Text("ⓘ", color = Accent, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 }
+                OutlinedButton(
+                    enabled = adapterConnected && !vinBusy,
+                    onClick = {
+                        vinBusy = true
+                        vinStatus = "Requesting VIN from the vehicle ECU…"
+                        thread(name = "ChuckReadVin") {
+                            val result = WifiElm327.readVin(context)
+                            Handler(Looper.getMainLooper()).post {
+                                vinBusy = false
+                                if (VinTools.isValidVin(result.vin)) {
+                                    vinValue = result.vin
+                                    vinSource = "ECU • VERIFIED THIS SESSION"
+                                    prefs.edit().putString("vin", result.vin).apply()
+                                    lookupVehicleDetails(result.vin)
+                                }
+                                vinStatus = result.message
+                            }
+                        }
+                    },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) { Text(if (vinBusy) "READING…" else "READ VIN", fontSize = 11.sp) }
+            }
+            Surface(color = if (adapterConnected) Color(0xFF173D35) else Color(0xFF493A22), shape = RoundedCornerShape(20.dp)) {
+                Text(if (adapterConnected) "●  ADAPTER RESPONDING" else "●  $adapterStatus", color = if (adapterConnected) Accent else Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+            }
+            if (showInfoDialog) {
+                AlertDialog(
+                    onDismissRequest = { showInfoDialog = false },
+                    title = { Text("About Chuck") },
+                    text = { Text("Chuck reads vehicle information and diagnostic data. VIN reading, live data and fault-code checks are read-only. Chuck does not erase trouble codes or change vehicle settings.") },
+                    confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("CLOSE") } }
+                )
             }
             if (vinValue.isNotBlank()) {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
@@ -190,27 +223,6 @@ private fun ChuckApp(context: Context) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (codeBusy) "READING CODES…" else "READ STORED TROUBLE CODES") }
                     Text("Read-only: this reads Mode 03 codes. It cannot erase codes.", color = Muted, fontSize = 11.sp)
-                    OutlinedButton(
-                        enabled = adapterConnected && !vinBusy,
-                        onClick = {
-                            vinBusy = true
-                            vinStatus = "Requesting VIN from the vehicle ECU…"
-                            thread(name = "ChuckReadVin") {
-                                val result = WifiElm327.readVin(context)
-                                Handler(Looper.getMainLooper()).post {
-                                    vinBusy = false
-                                    if (VinTools.isValidVin(result.vin)) {
-                                        vinValue = result.vin
-                                        vinSource = "ECU • VERIFIED THIS SESSION"
-                                        prefs.edit().putString("vin", result.vin).apply()
-                                        lookupVehicleDetails(result.vin)
-                                    }
-                                    vinStatus = result.message
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (vinBusy) "READING VIN…" else "IDENTIFY VEHICLE — READ VIN") }
                     Text(vinStatus, color = Muted, fontSize = 11.sp)
                 }
             }
