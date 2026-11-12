@@ -18,12 +18,15 @@ data class ElmConnectionResult(
 object WifiElm327 {
     fun connectAndIdentify(context: Context): ElmConnectionResult {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = cm.activeNetwork
-            ?: return ElmConnectionResult(false, "No active network. Connect the phone to the adapter Wi-Fi first.")
-        val caps = cm.getNetworkCapabilities(network)
-        if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) != true) {
-            return ElmConnectionResult(false, "The active network is not Wi-Fi. Select the OBD adapter network in Android settings.")
-        }
+        // The adapter Wi-Fi often has no internet, so Android may keep mobile data
+        // as the active network. Find the Wi-Fi network directly instead.
+        val network = cm.allNetworks.firstOrNull { candidate ->
+            cm.getNetworkCapabilities(candidate)
+                ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        } ?: return ElmConnectionResult(
+            false,
+            "No Wi-Fi network found. Connect the phone to the OBD adapter Wi-Fi first."
+        )
 
         val ports = listOf(35000, 23)
         var lastError = "No supported TCP port responded."
@@ -71,7 +74,7 @@ object WifiElm327 {
                 }
                 val ch = reader.read()
                 if (ch < 0) break
-                if (ch == '>') break
+                if (ch == '>'.code) break
                 if (ch.toChar() != '\r' && ch.toChar() != '\n') result.append(ch.toChar())
             } catch (_: Exception) {
                 break
