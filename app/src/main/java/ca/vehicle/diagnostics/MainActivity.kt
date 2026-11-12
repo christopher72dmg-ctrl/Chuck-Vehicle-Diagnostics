@@ -26,7 +26,7 @@ private val Muted = Color(0xFFAAB8C2)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { ChuckApp() }
+        setContent { ChuckApp(this) }
     }
 }
 
