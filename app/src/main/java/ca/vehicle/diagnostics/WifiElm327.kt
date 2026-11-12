@@ -90,20 +90,23 @@ object WifiElm327 {
         } ?: return ElmLiveDataResult(false, "Connect to the adapter's Wi-Fi first.")
         return try {
             network.socketFactory.createSocket().use { socket ->
-                socket.connect(InetSocketAddress("192.168.0.10", 35000), 2500)
-                socket.soTimeout = 1800
+                socket.connect(InetSocketAddress("192.168.0.10", 35000), 3500)
+                socket.soTimeout = 7000
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
                 val output = socket.getOutputStream()
-                exchange(reader, output, "ATZ")
+
+                exchange(reader, output, "ATZ", 2500)
                 exchange(reader, output, "ATE0")
                 exchange(reader, output, "ATL0")
-                exchange(reader, output, "ATS0")
+                exchange(reader, output, "ATS1")
                 exchange(reader, output, "ATH0")
                 exchange(reader, output, "ATSP0")
+                exchange(reader, output, "ATCAF1")
 
-                val rpmResponse = exchange(reader, output, "010C")
-                val coolantResponse = exchange(reader, output, "0105")
-                val voltageResponse = exchange(reader, output, "0142")
+                // Give the ECU time to wake and answer each live PID.
+                val rpmResponse = exchange(reader, output, "010C", 5000)
+                val coolantResponse = exchange(reader, output, "0105", 5000)
+                val voltageResponse = exchange(reader, output, "0142", 5000)
 
                 val rpmBytes = responseBytes(rpmResponse, "410C", 4)
                 val coolantBytes = responseBytes(coolantResponse, "4105", 2)
@@ -111,11 +114,17 @@ object WifiElm327 {
 
                 val rpm = rpmBytes?.let { ((it[0] * 256 + it[1]) / 4).toString() } ?: "—"
                 val coolant = coolantBytes?.let { (it[0] - 40).toString() + " °C" } ?: "—"
-                val volts = voltageBytes?.let { String.format("%.2f V", (it[0] * 256 + it[1]) / 1000.0) } ?: "—"
+                val volts = voltageBytes?.let { String.format(java.util.Locale.US, "%.2f V", (it[0] * 256 + it[1]) / 1000.0) } ?: "—"
                 val any = rpm != "—" || coolant != "—" || volts != "—"
+                val diagnostics = buildString {
+                    append("RPM: ").append(rpmResponse.ifBlank { "no response" })
+                    append(" | Coolant: ").append(coolantResponse.ifBlank { "no response" })
+                    append(" | Voltage: ").append(voltageResponse.ifBlank { "no response" })
+                }.take(500)
                 ElmLiveDataResult(
                     any,
-                    if (any) "Live data read from the vehicle ECU." else "Adapter answered, but the ECU did not return these live-data values. Check ignition is ON and try again.",
+                    if (any) "Live data received. Raw ECU replies: $diagnostics"
+                    else "No supported live values were decoded. Raw ECU replies: $diagnostics",
                     rpm, coolant, volts
                 )
             }
@@ -123,7 +132,6 @@ object WifiElm327 {
             ElmLiveDataResult(false, "Live-data request failed: ${e.message ?: "connection error"}")
         }
     }
-
 
 
     // Mode 09 PID 02 requests the vehicle identification number. Read-only.
