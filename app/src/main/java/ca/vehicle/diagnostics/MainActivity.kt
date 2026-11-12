@@ -47,6 +47,9 @@ private fun ChuckApp(context: Context) {
     var rpmValue by remember { mutableStateOf("—") }
     var coolantValue by remember { mutableStateOf("—") }
     var voltsValue by remember { mutableStateOf("—") }
+    var codeBusy by remember { mutableStateOf(false) }
+    var codeStatus by remember { mutableStateOf("Stored trouble codes have not been read.") }
+    var storedCodes by remember { mutableStateOf(emptyList<String>()) }
     MaterialTheme(colorScheme = darkColorScheme(
         background = Ink, surface = Panel, primary = Accent,
         onBackground = Color.White, onSurface = Color.White
@@ -113,6 +116,23 @@ private fun ChuckApp(context: Context) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (liveBusy) "READING LIVE DATA…" else "READ LIVE DATA") }
                     Text(liveStatus, color = Muted, fontSize = 11.sp)
+                    OutlinedButton(
+                        enabled = adapterConnected && !codeBusy,
+                        onClick = {
+                            codeBusy = true
+                            codeStatus = "Reading stored codes…"
+                            thread(name = "ChuckReadCodes") {
+                                val result = WifiElm327.readStoredCodes(context)
+                                Handler(Looper.getMainLooper()).post {
+                                    codeBusy = false
+                                    storedCodes = result.codes
+                                    codeStatus = result.message
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (codeBusy) "READING CODES…" else "READ STORED TROUBLE CODES") }
+                    Text("Read-only: this reads Mode 03 codes. It cannot erase codes.", color = Muted, fontSize = 11.sp)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -140,9 +160,16 @@ private fun ChuckApp(context: Context) {
                     Text(investigation, color = Color.White, fontSize = 14.sp)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallPanel("LIVE DATA", "Next: real sensor readings", Modifier.weight(1f))
-                SmallPanel("FAULT CODES", "Read before clearing", Modifier.weight(1f))
+            Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("STORED FAULT CODES", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(codeStatus, color = Muted, fontSize = 12.sp)
+                    if (storedCodes.isNotEmpty()) {
+                        storedCodes.forEach { code ->
+                            Text(code, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallPanel("CASE HISTORY", "Keep what works", Modifier.weight(1f))
