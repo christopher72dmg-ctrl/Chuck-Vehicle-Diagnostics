@@ -59,6 +59,16 @@ private fun ChuckApp(context: Context) {
     val prefs = remember { context.getSharedPreferences("chuck_vehicle", Context.MODE_PRIVATE) }
     var vinValue by remember { mutableStateOf(prefs.getString("vin", "") ?: "") }
     var vinSource by remember { mutableStateOf(if (vinValue.isBlank()) "" else "SAVED • RECHECK WHEN CONNECTED") }
+    var vehicleSummary by remember { mutableStateOf(if (vinValue.isBlank()) "" else VinTools.summary(vinValue)) }
+    fun lookupVehicleDetails(vin: String) {
+        vehicleSummary = VinTools.summary(vin)
+        thread(name = "ChuckVinLookup") {
+            val decoded = VinTools.decodeOnline(vin)
+            if (!decoded.isNullOrBlank()) Handler(Looper.getMainLooper()).post {
+                if (vinValue == vin) vehicleSummary = decoded
+            }
+        }
+    }
     val scannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK) {
             val scanned = result.data?.getStringExtra(VinScannerActivity.EXTRA_VIN).orEmpty()
@@ -66,6 +76,7 @@ private fun ChuckApp(context: Context) {
                 vinValue = scanned
                 vinSource = "SCANNED • VERIFIED"
                 prefs.edit().putString("vin", scanned).apply()
+                lookupVehicleDetails(scanned)
             }
         }
     }
@@ -93,7 +104,7 @@ private fun ChuckApp(context: Context) {
                             Text("VEHICLE IDENTIFICATION", color = Accent, fontWeight = FontWeight.Bold, fontSize = 11.sp, modifier = Modifier.weight(1f))
                             Text(vinSource, color = Muted, fontSize = 9.sp)
                         }
-                        Text(VinTools.summary(vinValue), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text(vehicleSummary.ifBlank { VinTools.summary(vinValue) }, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         Text(vinValue, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = {
@@ -101,7 +112,7 @@ private fun ChuckApp(context: Context) {
                                     .setPrimaryClip(ClipData.newPlainText("VIN", vinValue))
                             }, modifier = Modifier.weight(1f)) { Text("COPY VIN") }
                             Button(onClick = {
-                                val all = VinTools.summary(vinValue) + "\nVIN: " + vinValue
+                                val all = (vehicleSummary.ifBlank { VinTools.summary(vinValue) }) + "\nVIN: " + vinValue
                                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                                     .setPrimaryClip(ClipData.newPlainText("Vehicle details", all))
                             }, modifier = Modifier.weight(1f)) { Text("COPY ALL") }
@@ -192,6 +203,7 @@ private fun ChuckApp(context: Context) {
                                         vinValue = result.vin
                                         vinSource = "ECU • VERIFIED THIS SESSION"
                                         prefs.edit().putString("vin", result.vin).apply()
+                                        lookupVehicleDetails(result.vin)
                                     }
                                     vinStatus = result.message
                                 }
