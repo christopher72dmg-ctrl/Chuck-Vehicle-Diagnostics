@@ -108,9 +108,9 @@ object WifiElm327 {
                 val coolantResponse = exchange(reader, output, "0105", 5000)
                 val voltageResponse = exchange(reader, output, "0142", 5000)
 
-                val rpmBytes = responseBytes(rpmResponse, "410C", 4)
-                val coolantBytes = responseBytes(coolantResponse, "4105", 2)
-                val voltageBytes = responseBytes(voltageResponse, "4142", 4)
+                val rpmBytes = responseBytes(rpmResponse, "410C", 2)
+                val coolantBytes = responseBytes(coolantResponse, "4105", 1)
+                val voltageBytes = responseBytes(voltageResponse, "4142", 2)
 
                 val rpm = rpmBytes?.let { ((it[0] * 256 + it[1]) / 4).toString() } ?: "—"
                 val coolant = coolantBytes?.let { (it[0] - 40).toString() + " °C" } ?: "—"
