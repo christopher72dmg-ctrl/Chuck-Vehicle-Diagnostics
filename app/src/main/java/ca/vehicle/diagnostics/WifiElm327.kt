@@ -254,14 +254,35 @@ object WifiElm327 {
     }
 
     private fun responseBytes(response: String, header: String, byteCount: Int): IntArray? {
-        val clean = response.uppercase().filter { it in "0123456789ABCDEF" }
-        val start = clean.indexOf(header)
+        // Ignore adapter status text such as SEARCHING... and parse actual
+        // two-character hex bytes, whether the ELM prints spaces or not.
+        val cleaned = response.uppercase()
+            .replace(Regex("SEARCHING\\.{0,3}|NO DATA|STOPPED|UNABLE TO CONNECT"), " ")
+        val wanted = header.chunked(2)
+
+        val tokens = Regex("(?<![A-Z0-9])([0-9A-F]{2})(?![A-Z0-9])")
+            .findAll(cleaned)
+            .map { it.groupValues[1] }
+            .toList()
+        val tokenStart = tokens.indices.firstOrNull { index ->
+            index + wanted.size <= tokens.size &&
+                wanted.indices.all { offset -> tokens[index + offset] == wanted[offset] }
+        }
+        if (tokenStart != null && tokenStart + wanted.size + byteCount <= tokens.size) {
+            return (0 until byteCount).map { offset ->
+                tokens[tokenStart + wanted.size + offset].toInt(16)
+            }.toIntArray()
+        }
+
+        // Compact fallback for adapters that return an unspaced hex stream.
+        val compact = cleaned.filter { it in "0123456789ABCDEF" }
+        val start = compact.indexOf(header)
         if (start < 0) return null
         val dataStart = start + header.length
         val needed = byteCount * 2
-        if (clean.length < dataStart + needed) return null
-        return (0 until byteCount).map { i ->
-            clean.substring(dataStart + i * 2, dataStart + i * 2 + 2).toInt(16)
+        if (compact.length < dataStart + needed) return null
+        return (0 until byteCount).map { offset ->
+            compact.substring(dataStart + offset * 2, dataStart + offset * 2 + 2).toInt(16)
         }.toIntArray()
     }
 
