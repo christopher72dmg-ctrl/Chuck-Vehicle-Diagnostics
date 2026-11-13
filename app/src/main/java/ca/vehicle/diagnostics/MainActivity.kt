@@ -74,7 +74,7 @@ private fun ChuckApp(context: Context) {
                     liveBusy = true
                     val result = withContext(Dispatchers.IO) {
                         try { WifiElm327.readLiveData(context) }
-                        catch (e: Exception) { ElmLiveDataResult("—", "—", "—", "LIVE READ FAILED • ${e.message ?: "Communication error"}") }
+                        catch (e: Exception) { ElmLiveDataResult(false, "LIVE READ FAILED • ${e.message ?: "Communication error"}", "—", "—", "—") }
                     }
                     rpmValue = result.rpm
                     coolantValue = result.coolant
