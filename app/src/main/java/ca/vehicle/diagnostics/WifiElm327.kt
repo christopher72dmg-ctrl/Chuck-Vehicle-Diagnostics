@@ -227,7 +227,7 @@ object WifiElm327 {
                         upper.contains("BUS INIT: ERROR") ||
                         upper.contains("STOPPED")) {
                         lastError = "The adapter could not establish communication with the ECU. Raw response: ${response.ifBlank { "(empty)" }}"
-                        continue
+                        return@use
                     }
 
                     // Strip adapter status words before interpreting hexadecimal response bytes.
@@ -245,13 +245,13 @@ object WifiElm327 {
                         } else {
                             "No valid Mode 03 response was recognized. Raw ECU reply: $response"
                         }
-                        continue
+                        return@use
                     }
 
                     val data = compact.substring(positive + 2)
                     if (data.length < 4) {
                         lastError = "ECU began a Mode 03 reply, but the response was incomplete: $response"
-                        continue
+                        return@use
                     }
 
                     val found = mutableListOf<String>()
