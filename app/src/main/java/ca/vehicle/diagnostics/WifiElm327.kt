@@ -199,29 +199,61 @@ object WifiElm327 {
         val network = cm.allNetworks.firstOrNull {
             cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
         } ?: return ElmTroubleCodeResult(false, "Connect to the adapter's Wi-Fi first.")
-        return try {
-            network.socketFactory.createSocket().use { socket ->
-                socket.connect(InetSocketAddress("192.168.0.10", 35000), 2500)
-                socket.soTimeout = 2500
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                val output = socket.getOutputStream()
-                exchange(reader, output, "ATZ")
-                exchange(reader, output, "ATE0")
-                exchange(reader, output, "ATL0")
-                exchange(reader, output, "ATS0")
-                exchange(reader, output, "ATH0")
-                exchange(reader, output, "ATSP0")
-                val response = exchange(reader, output, "03")
-                val clean = response.uppercase().filter { it in "0123456789ABCDEF" }
-                val start = clean.indexOf("43")
-                if (start < 0) {
-                    val noCodes = response.contains("NO DATA", true) || response.contains("43", true) && clean.length <= 2
-                    ElmTroubleCodeResult(
-                        noCodes,
-                        if (noCodes) "The ECU reports no stored Mode 03 codes." else "No Mode 03 code response was recognized. Raw response: ${response.ifBlank { "(empty)" }}"
-                    )
-                } else {
-                    val data = clean.substring(start + 2)
+
+        var lastError = "No response from the adapter."
+        for (port in listOf(35000, 23)) {
+            try {
+                network.socketFactory.createSocket().use { socket ->
+                    socket.connect(InetSocketAddress("192.168.0.10", port), 3500)
+                    socket.soTimeout = 9000
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                    val output = socket.getOutputStream()
+
+                    // Reset and configure the ELM, then allow extra time for ECU protocol search.
+                    exchange(reader, output, "ATZ", 3000)
+                    exchange(reader, output, "ATE0", 1800)
+                    exchange(reader, output, "ATL0", 1800)
+                    exchange(reader, output, "ATS0", 1800)
+                    exchange(reader, output, "ATH0", 1800)
+                    exchange(reader, output, "ATAT1", 1800)
+                    exchange(reader, output, "ATST64", 1800)
+                    exchange(reader, output, "ATSP0", 1800)
+                    exchange(reader, output, "ATCAF1", 1800)
+
+                    val response = exchange(reader, output, "03", timeoutMs = 8500)
+                    val upper = response.uppercase()
+                    if (upper.contains("UNABLE TO CONNECT") ||
+                        upper.contains("CAN ERROR") ||
+                        upper.contains("BUS INIT: ERROR") ||
+                        upper.contains("STOPPED")) {
+                        lastError = "The adapter could not establish communication with the ECU. Raw response: ${response.ifBlank { "(empty)" }}"
+                        continue
+                    }
+
+                    // Strip adapter status words before interpreting hexadecimal response bytes.
+                    val payloadText = upper
+                        .replace(Regex("SEARCHING\\.{0,3}|NO DATA|STOPPED|UNABLE TO CONNECT|CAN ERROR|BUS INIT: ERROR"), " ")
+                    val compact = payloadText.filter { it in "0123456789ABCDEF" }
+                    val positive = compact.indexOf("43")
+
+                    if (positive < 0) {
+                        if (upper.contains("NO DATA")) {
+                            return ElmTroubleCodeResult(true, "ECU replied NO DATA. No stored Mode 03 codes were reported.")
+                        }
+                        lastError = if (response.isBlank()) {
+                            "No ECU reply before timeout. Check ignition position, adapter connection and vehicle protocol."
+                        } else {
+                            "No valid Mode 03 response was recognized. Raw ECU reply: $response"
+                        }
+                        continue
+                    }
+
+                    val data = compact.substring(positive + 2)
+                    if (data.length < 4) {
+                        lastError = "ECU began a Mode 03 reply, but the response was incomplete: $response"
+                        continue
+                    }
+
                     val found = mutableListOf<String>()
                     var i = 0
                     while (i + 4 <= data.length) {
@@ -231,12 +263,19 @@ object WifiElm327 {
                         if (a == 0 && b == 0) continue
                         found += decodeDtc(a, b)
                     }
-                    ElmTroubleCodeResult(true, if (found.isEmpty()) "No stored codes were reported." else "${found.size} stored code(s) read. Nothing was cleared.", found)
+
+                    return ElmTroubleCodeResult(
+                        true,
+                        if (found.isEmpty()) "ECU responded to Mode 03. No stored codes were reported."
+                        else "${found.size} stored code(s) received from the ECU. Nothing was cleared.",
+                        found
+                    )
                 }
+            } catch (e: Exception) {
+                lastError = "Port $port code-read error: ${e.message ?: "connection error"}"
             }
-        } catch (e: Exception) {
-            ElmTroubleCodeResult(false, "Code read failed: ${e.message ?: "connection error"}")
         }
+        return ElmTroubleCodeResult(false, lastError)
     }
 
     private fun decodeDtc(a: Int, b: Int): String {
