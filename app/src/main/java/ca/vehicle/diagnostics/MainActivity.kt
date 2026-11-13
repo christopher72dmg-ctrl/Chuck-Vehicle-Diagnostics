@@ -25,6 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.concurrent.thread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private val Ink = Color(0xFF101820)
 private val Panel = Color(0xFF1B2933)
@@ -47,6 +50,8 @@ private fun ChuckApp(context: Context) {
     var adapterBusy by remember { mutableStateOf(false) }
     var adapterConnected by remember { mutableStateOf(false) }
     var liveBusy by remember { mutableStateOf(false) }
+    var liveRunning by remember { mutableStateOf(false) }
+    var liveUpdated by remember { mutableStateOf("") }
     var liveStatus by remember { mutableStateOf("Live readings have not been requested yet.") }
     var rpmValue by remember { mutableStateOf("—") }
     var coolantValue by remember { mutableStateOf("—") }
@@ -62,6 +67,26 @@ private fun ChuckApp(context: Context) {
     var vinSource by remember { mutableStateOf(if (vinValue.isBlank()) "" else "SAVED • RECHECK WHEN CONNECTED") }
     var vehicleSummary by remember { mutableStateOf(if (vinValue.isBlank()) "" else VinTools.summary(vinValue)) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(liveRunning, adapterConnected) {
+        if (liveRunning && adapterConnected) {
+            while (liveRunning && adapterConnected) {
+                if (!liveBusy) {
+                    liveBusy = true
+                    val result = withContext(Dispatchers.IO) {
+                        try { WifiElm327.readLiveData(context) }
+                        catch (e: Exception) { ElmLiveDataResult("—", "—", "—", "LIVE READ FAILED • ${e.message ?: "Communication error"}") }
+                    }
+                    rpmValue = result.rpm
+                    coolantValue = result.coolant
+                    voltsValue = result.volts
+                    liveStatus = result.message
+                    liveUpdated = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    liveBusy = false
+                }
+                delay(2500)
+            }
+        }
+    }
     fun lookupVehicleDetails(vin: String) {
         vehicleSummary = VinTools.summary(vin)
         thread(name = "ChuckVinLookup") {
@@ -188,24 +213,15 @@ private fun ChuckApp(context: Context) {
                     Text("DIAGNOSTICS", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Text("Read-only vehicle data. No codes are erased and no vehicle settings are changed.", color = Muted, fontSize = 11.sp)
                     Button(
-                        enabled = adapterConnected && !liveBusy,
+                        enabled = adapterConnected,
                         onClick = {
-                            liveBusy = true
-                            liveStatus = "Requesting live values from the vehicle ECU…"
-                            thread(name = "ChuckLiveData") {
-                                val result = WifiElm327.readLiveData(context)
-                                Handler(Looper.getMainLooper()).post {
-                                    liveBusy = false
-                                    rpmValue = result.rpm
-                                    coolantValue = result.coolant
-                                    voltsValue = result.volts
-                                    liveStatus = result.message
-                                }
-                            }
+                            liveRunning = !liveRunning
+                            liveStatus = if (!liveRunning) "Live data stopped." else "Starting repeated ECU readings…"
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (liveBusy) "READING LIVE DATA…" else "READ LIVE DATA") }
+                    ) { Text(if (liveRunning) "STOP LIVE DATA" else "START LIVE DATA") }
                     Text(liveStatus, color = Muted, fontSize = 11.sp)
+                    if (liveUpdated.isNotBlank()) Text("LAST UPDATED • $liveUpdated", color = Accent, fontSize = 10.sp)
                     OutlinedButton(
                         enabled = adapterConnected && !codeBusy,
                         onClick = {
