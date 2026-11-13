@@ -42,8 +42,8 @@ class MainActivity : ComponentActivity() {
 private fun ChuckApp(context: Context) {
     var complaint by remember { mutableStateOf("") }
     var investigation by remember { mutableStateOf("Tell me what the vehicle is doing. We'll work through the evidence before suggesting parts.") }
-    var adapterStatus by remember { mutableStateOf("NOT TESTED") }
-    var adapterDetails by remember { mutableStateOf("Connect to the adapter's Wi-Fi, then run the read-only connection test.") }
+    var adapterStatus by remember { mutableStateOf("NOT CONNECTED") }
+    var adapterDetails by remember { mutableStateOf("Join the ELM327 Wi-Fi in Android settings, then tap CONNECT.") }
     var adapterBusy by remember { mutableStateOf(false) }
     var adapterConnected by remember { mutableStateOf(false) }
     var liveBusy by remember { mutableStateOf(false) }
@@ -98,6 +98,32 @@ private fun ChuckApp(context: Context) {
                 IconButton(onClick = { showInfoDialog = true }) {
                     Text("ⓘ", color = Accent, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 }
+
+            }
+            Surface(color = if (adapterConnected) Color(0xFF173D35) else Color(0xFF493A22), shape = RoundedCornerShape(20.dp)) {
+                Text(if (adapterConnected) "●  ADAPTER CONNECTED" else "●  $adapterStatus", color = if (adapterConnected) Accent else Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    enabled = !adapterBusy,
+                    onClick = {
+                        adapterBusy = true
+                        adapterConnected = false
+                        adapterStatus = "CONNECTING"
+                        adapterDetails = "Checking adapter connection…"
+                        thread(name = "ChuckElmConnect") {
+                            val result = WifiElm327.connectAndIdentify(context)
+                            Handler(Looper.getMainLooper()).post {
+                                adapterBusy = false
+                                adapterConnected = result.success
+                                adapterStatus = if (result.success) "CONNECTED" else "CONNECTION FAILED"
+                                adapterDetails = result.message
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (adapterBusy) "CONNECTING…" else "CONNECT") }
+
                 OutlinedButton(
                     enabled = adapterConnected && !vinBusy,
                     onClick = {
@@ -117,12 +143,10 @@ private fun ChuckApp(context: Context) {
                             }
                         }
                     },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                ) { Text(if (vinBusy) "READING…" else "READ VIN", fontSize = 11.sp) }
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (vinBusy) "READING…" else "READ VIN") }
             }
-            Surface(color = if (adapterConnected) Color(0xFF173D35) else Color(0xFF493A22), shape = RoundedCornerShape(20.dp)) {
-                Text(if (adapterConnected) "●  ADAPTER RESPONDING" else "●  $adapterStatus", color = if (adapterConnected) Accent else Color(0xFFFFD18A), fontSize = 10.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
-            }
+            Text(adapterDetails, color = if (adapterConnected) Accent else Muted, fontSize = 11.sp)
             if (showInfoDialog) {
                 AlertDialog(
                     onDismissRequest = { showInfoDialog = false },
@@ -161,33 +185,8 @@ private fun ChuckApp(context: Context) {
             Button(onClick = { context.startActivity(Intent(context, DeviceBenchActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("RUN DEVICE BENCH TEST") }
             Card(colors = CardDefaults.cardColors(containerColor = Panel)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("VEHICLE CONNECTION", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("Wi-Fi ELM327 adapter", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Target: 192.168.0.10  •  Ports: 35000 / 23", color = Muted, fontSize = 12.sp)
-                    Button(
-                        enabled = !adapterBusy,
-                        onClick = {
-                            adapterBusy = true
-                            adapterStatus = "TESTING"
-                            adapterDetails = "Checking the Wi-Fi adapter and testing ELM communication…"
-                            thread(name = "ChuckElmProbe") {
-                                val result = WifiElm327.connectAndIdentify(context)
-                                Handler(Looper.getMainLooper()).post {
-                                    adapterBusy = false
-                                    adapterConnected = result.success
-                                    adapterStatus = if (result.success) "CONNECTED" else "NO RESPONSE"
-                                    adapterDetails = buildString {
-                                        append(result.message)
-                                        if (result.adapterInfo.isNotBlank()) append("\nAdapter: ${result.adapterInfo}")
-                                        if (result.supportedPids.isNotBlank()) append("\nSupported PID response: ${result.supportedPids}")
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (adapterBusy) "TESTING ADAPTER…" else "TEST WI-FI ADAPTER") }
-                    Text(adapterDetails, color = if (adapterConnected) Accent else Muted, fontSize = 12.sp)
-                    Text("Read-only test. No codes are erased and no vehicle settings are changed.", color = Muted, fontSize = 11.sp)
+                    Text("DIAGNOSTICS", color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Read-only vehicle data. No codes are erased and no vehicle settings are changed.", color = Muted, fontSize = 11.sp)
                     Button(
                         enabled = adapterConnected && !liveBusy,
                         onClick = {
