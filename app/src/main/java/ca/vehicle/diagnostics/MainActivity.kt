@@ -53,6 +53,7 @@ private fun ChuckApp(context: Context) {
     var voltsValue by remember { mutableStateOf("—") }
     var codeBusy by remember { mutableStateOf(false) }
     var codeStatus by remember { mutableStateOf("Stored trouble codes have not been read.") }
+    var codeResultOk by remember { mutableStateOf(false) }
     var storedCodes by remember { mutableStateOf(emptyList<String>()) }
     var vinBusy by remember { mutableStateOf(false) }
     var vinStatus by remember { mutableStateOf("Vehicle VIN has not been requested.") }
@@ -210,18 +211,68 @@ private fun ChuckApp(context: Context) {
                         enabled = adapterConnected && !codeBusy,
                         onClick = {
                             codeBusy = true
-                            codeStatus = "Reading stored codes…"
+                            codeResultOk = false
+                            storedCodes = emptyList()
+                            codeStatus = "STARTING • Connecting to adapter and requesting ECU Mode 03 response…"
                             thread(name = "ChuckReadCodes") {
-                                val result = WifiElm327.readStoredCodes(context)
+                                val result = try {
+                                    WifiElm327.readStoredCodes(context)
+                                } catch (e: Exception) {
+                                    ElmTroubleCodeResult(false, "SCAN ERROR • ${e.message ?: "Unexpected communication error"}")
+                                }
                                 Handler(Looper.getMainLooper()).post {
                                     codeBusy = false
+                                    codeResultOk = result.success
                                     storedCodes = result.codes
-                                    codeStatus = result.message
+                                    codeStatus = (if (result.success) "COMPLETE • " else "FAILED • ") + result.message
                                 }
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (codeBusy) "READING CODES…" else "READ STORED TROUBLE CODES") }
+                    ) { Text(if (codeBusy) "SCANNING ECU…" else "READ STORED TROUBLE CODES") }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            color = when {
+                                codeBusy -> Color(0xFF493A22)
+                                codeResultOk -> Color(0xFF173D35)
+                                codeStatus.startsWith("FAILED") -> Color(0xFF512B2B)
+                                else -> Color(0xFF293640)
+                            },
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text(
+                                when {
+                                    codeBusy -> "●  SCAN IN PROGRESS"
+                                    codeResultOk -> "●  ECU RESPONDED"
+                                    codeStatus.startsWith("FAILED") -> "●  SCAN FAILED"
+                                    else -> "●  WAITING"
+                                },
+                                color = when {
+                                    codeBusy -> Color(0xFFFFD18A)
+                                    codeResultOk -> Accent
+                                    codeStatus.startsWith("FAILED") -> Color(0xFFFF9999)
+                                    else -> Muted
+                                },
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                        if (codeBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Accent,
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    }
+                    if (codeBusy) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Accent,
+                            trackColor = Color(0xFF34434D)
+                        )
+                    }
+                    Text(codeStatus, color = if (codeResultOk) Accent else Muted, fontSize = 11.sp)
                     Text("Read-only: this reads Mode 03 codes. It cannot erase codes.", color = Muted, fontSize = 11.sp)
                     Text(vinStatus, color = Muted, fontSize = 11.sp)
                 }
