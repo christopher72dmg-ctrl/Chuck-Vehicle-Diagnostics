@@ -67,6 +67,32 @@ private fun ChuckApp(context: Context) {
     var vinSource by remember { mutableStateOf(if (vinValue.isBlank()) "" else "SAVED • RECHECK WHEN CONNECTED") }
     var vehicleSummary by remember { mutableStateOf(if (vinValue.isBlank()) "" else VinTools.summary(vinValue)) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showOilEditor by remember { mutableStateOf(false) }
+    var oilViscosity by remember { mutableStateOf(prefs.getString("oil_viscosity_$vinValue", "") ?: "") }
+    var oilCapacity by remember { mutableStateOf(prefs.getString("oil_capacity_$vinValue", "") ?: "") }
+    var wixFilter by remember { mutableStateOf(prefs.getString("oil_wix_$vinValue", "") ?: "") }
+    var oilSpec by remember { mutableStateOf(prefs.getString("oil_spec_$vinValue", "") ?: "") }
+    fun loadOilReference(vin: String) {
+        oilViscosity = prefs.getString("oil_viscosity_$vin", "") ?: ""
+        oilCapacity = prefs.getString("oil_capacity_$vin", "") ?: ""
+        wixFilter = prefs.getString("oil_wix_$vin", "") ?: ""
+        oilSpec = prefs.getString("oil_spec_$vin", "") ?: ""
+    }
+    fun saveOilReference() {
+        prefs.edit()
+            .putString("oil_viscosity_$vinValue", oilViscosity.trim())
+            .putString("oil_capacity_$vinValue", oilCapacity.trim())
+            .putString("oil_wix_$vinValue", wixFilter.trim())
+            .putString("oil_spec_$vinValue", oilSpec.trim())
+            .apply()
+        showOilEditor = false
+    }
+    fun searchOilOnline() {
+        val vehicle = vehicleSummary.ifBlank { VinTools.summary(vinValue) }
+        val query = "$vehicle VIN $vinValue engine oil viscosity capacity oil filter WIX"
+        val url = "https://www.google.com/search?q=" + android.net.Uri.encode(query)
+        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+    }
     LaunchedEffect(liveRunning, adapterConnected) {
         if (liveRunning && adapterConnected) {
             while (liveRunning && adapterConnected) {
@@ -89,6 +115,7 @@ private fun ChuckApp(context: Context) {
     }
     fun lookupVehicleDetails(vin: String) {
         vehicleSummary = VinTools.summary(vin)
+        loadOilReference(vin)
         thread(name = "ChuckVinLookup") {
             val decoded = VinTools.decodeOnline(vin)
             if (!decoded.isNullOrBlank()) Handler(Looper.getMainLooper()).post {
@@ -172,6 +199,23 @@ private fun ChuckApp(context: Context) {
                 ) { Text(if (vinBusy) "READING…" else "READ VIN") }
             }
             Text(adapterDetails, color = if (adapterConnected) Accent else Muted, fontSize = 11.sp)
+            if (showOilEditor) {
+                AlertDialog(
+                    onDismissRequest = { showOilEditor = false },
+                    title = { Text("Oil & Filter Reference") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = oilViscosity, onValueChange = { oilViscosity = it }, label = { Text("Oil viscosity (e.g. 5W-30)") }, singleLine = true)
+                            OutlinedTextField(value = oilCapacity, onValueChange = { oilCapacity = it }, label = { Text("Capacity with filter (e.g. 5.7 L)") }, singleLine = true)
+                            OutlinedTextField(value = wixFilter, onValueChange = { wixFilter = it }, label = { Text("WIX filter number") }, singleLine = true)
+                            OutlinedTextField(value = oilSpec, onValueChange = { oilSpec = it }, label = { Text("Oil specification (optional)") }, singleLine = true)
+                            Text("Saved separately for this VIN. Confirm specs for the exact engine before servicing.", color = Muted, fontSize = 11.sp)
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { saveOilReference() }) { Text("SAVE") } },
+                    dismissButton = { TextButton(onClick = { showOilEditor = false }) { Text("CANCEL") } }
+                )
+            }
             if (showInfoDialog) {
                 AlertDialog(
                     onDismissRequest = { showInfoDialog = false },
@@ -200,15 +244,38 @@ private fun ChuckApp(context: Context) {
                                     .setPrimaryClip(ClipData.newPlainText("Vehicle details", all))
                             }, modifier = Modifier.weight(1f)) { Text("COPY ALL") }
                         }
-                        OutlinedButton(
-                            onClick = {
-                                val vehicle = vehicleSummary.ifBlank { VinTools.summary(vinValue) }
-                                val search = "$vehicle VIN $vinValue engine oil viscosity oil capacity with filter"
-                                val url = "https://www.google.com/search?q=" + android.net.Uri.encode(search)
-                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("OIL VISCOSITY & CAPACITY LOOKUP") }
+                        Divider(color = Color(0xFF34434D))
+                        Text("OIL & FILTER QUICK REFERENCE", color = Accent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Viscosity", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                            Text(oilViscosity.ifBlank { "Not saved yet" }, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            if (oilViscosity.isNotBlank()) IconButton(onClick = {
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Oil viscosity", oilViscosity))
+                            }) { Text("⧉", color = Accent) }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Capacity (with filter)", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                            Text(oilCapacity.ifBlank { "Not saved yet" }, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            if (oilCapacity.isNotBlank()) IconButton(onClick = {
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Oil capacity", oilCapacity))
+                            }) { Text("⧉", color = Accent) }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("WIX filter", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                            Text(wixFilter.ifBlank { "Not saved yet" }, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            if (wixFilter.isNotBlank()) IconButton(onClick = {
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("WIX filter", wixFilter))
+                            }) { Text("⧉", color = Accent) }
+                        }
+                        if (oilSpec.isNotBlank()) Text("Specification: $oilSpec", color = Muted, fontSize = 11.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = { showOilEditor = true }, modifier = Modifier.weight(1f)) { Text("EDIT / SAVE") }
+                            Button(onClick = { searchOilOnline() }, modifier = Modifier.weight(1f)) { Text("SEARCH ONLINE") }
+                        }
+                        OutlinedButton(onClick = {
+                            val reference = "Vehicle: ${vehicleSummary.ifBlank { VinTools.summary(vinValue) }}\\nVIN: $vinValue\\nOil viscosity: ${oilViscosity.ifBlank { "Not saved" }}\\nCapacity (with filter): ${oilCapacity.ifBlank { "Not saved" }}\\nWIX filter: ${wixFilter.ifBlank { "Not saved" }}\\nOil specification: ${oilSpec.ifBlank { "Not saved" }}"
+                            (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Oil and filter reference", reference))
+                        }, modifier = Modifier.fillMaxWidth()) { Text("COPY OIL & FILTER INFO") }
                     }
                 }
             }
