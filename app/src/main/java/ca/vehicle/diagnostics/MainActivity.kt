@@ -204,7 +204,7 @@ private fun ChuckApp(context: Context) {
                     onDismissRequest = { showOilEditor = false },
                     title = { Text("Oil & Filter Reference") },
                     text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(value = oilViscosity, onValueChange = { oilViscosity = it }, label = { Text("Oil viscosity (e.g. 5W-30)") }, singleLine = true)
                             OutlinedTextField(value = oilCapacity, onValueChange = { oilCapacity = it }, label = { Text("Capacity with filter (e.g. 5.7 L)") }, singleLine = true)
                             OutlinedTextField(value = wixFilter, onValueChange = { wixFilter = it }, label = { Text("WIX filter number") }, singleLine = true)
@@ -273,7 +273,7 @@ private fun ChuckApp(context: Context) {
                             Button(onClick = { searchOilOnline() }, modifier = Modifier.weight(1f)) { Text("SEARCH ONLINE") }
                         }
                         OutlinedButton(onClick = {
-                            val reference = "Vehicle: ${vehicleSummary.ifBlank { VinTools.summary(vinValue) }}\\nVIN: $vinValue\\nOil viscosity: ${oilViscosity.ifBlank { "Not saved" }}\\nCapacity (with filter): ${oilCapacity.ifBlank { "Not saved" }}\\nWIX filter: ${wixFilter.ifBlank { "Not saved" }}\\nOil specification: ${oilSpec.ifBlank { "Not saved" }}"
+                            val reference = "Vehicle: ${vehicleSummary.ifBlank { VinTools.summary(vinValue) }}\nVIN: $vinValue\nOil viscosity: ${oilViscosity.ifBlank { "Not saved" }}\nCapacity (with filter): ${oilCapacity.ifBlank { "Not saved" }}\nWIX filter: ${wixFilter.ifBlank { "Not saved" }}\nOil specification: ${oilSpec.ifBlank { "Not saved" }}"
                             (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Oil and filter reference", reference))
                         }, modifier = Modifier.fillMaxWidth()) { Text("COPY OIL & FILTER INFO") }
                     }
