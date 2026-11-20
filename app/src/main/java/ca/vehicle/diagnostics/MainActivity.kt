@@ -82,9 +82,9 @@ private fun ChuckApp(context: Context) {
         // Verified factory reference for the 2012 Chrysler 200 3.6L V6.
         // Owner's guide: SAE 5W-30, 6 US qt (5.6 L) with filter, MS-6395.
         // Canadian WIX fitment listing: 57526.
-        val vehicle = VinTools.summary(vin).uppercase()
+        val vehicle = (vehicleSummary + " " + VinTools.summary(vin)).uppercase()
         val is2012Chrysler200V6 = vehicle.contains("2012 CHRYSLER 200") &&
-            vehicle.contains("3.6 L")
+            (vehicle.contains("3.6 L") || vehicle.contains("3.6L"))
         val defaultViscosity = if (is2012Chrysler200V6) "SAE 5W-30" else ""
         val defaultCapacity = if (is2012Chrysler200V6) "6 US qt (5.6 L) with filter" else ""
         val defaultWix = if (is2012Chrysler200V6) "WIX 57526" else ""
@@ -106,7 +106,7 @@ private fun ChuckApp(context: Context) {
                 .apply()
         }
     }
-    LaunchedEffect(vinValue) {
+    LaunchedEffect(vinValue, vehicleSummary) {
         if (vinValue.isNotBlank()) loadOilReference(vinValue)
     }
     fun saveOilReference() {
