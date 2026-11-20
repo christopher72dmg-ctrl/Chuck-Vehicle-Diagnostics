@@ -74,10 +74,40 @@ private fun ChuckApp(context: Context) {
     var wixFilter by remember { mutableStateOf(prefs.getString("oil_wix_$vinValue", "") ?: "") }
     var oilSpec by remember { mutableStateOf(prefs.getString("oil_spec_$vinValue", "") ?: "") }
     fun loadOilReference(vin: String) {
-        oilViscosity = prefs.getString("oil_viscosity_$vin", "") ?: ""
-        oilCapacity = prefs.getString("oil_capacity_$vin", "") ?: ""
-        wixFilter = prefs.getString("oil_wix_$vin", "") ?: ""
-        oilSpec = prefs.getString("oil_spec_$vin", "") ?: ""
+        val savedViscosity = prefs.getString("oil_viscosity_$vin", "") ?: ""
+        val savedCapacity = prefs.getString("oil_capacity_$vin", "") ?: ""
+        val savedWix = prefs.getString("oil_wix_$vin", "") ?: ""
+        val savedSpec = prefs.getString("oil_spec_$vin", "") ?: ""
+
+        // Verified factory reference for the 2012 Chrysler 200 3.6L V6.
+        // Owner's guide: SAE 5W-30, 6 US qt (5.6 L) with filter, MS-6395.
+        // Canadian WIX fitment listing: 57526.
+        val vehicle = VinTools.summary(vin).uppercase()
+        val is2012Chrysler200V6 = vehicle.contains("2012 CHRYSLER 200") &&
+            vehicle.contains("3.6 L")
+        val defaultViscosity = if (is2012Chrysler200V6) "SAE 5W-30" else ""
+        val defaultCapacity = if (is2012Chrysler200V6) "6 US qt (5.6 L) with filter" else ""
+        val defaultWix = if (is2012Chrysler200V6) "WIX 57526" else ""
+        val defaultSpec = if (is2012Chrysler200V6) "Chrysler MS-6395" else ""
+
+        oilViscosity = savedViscosity.ifBlank { defaultViscosity }
+        oilCapacity = savedCapacity.ifBlank { defaultCapacity }
+        wixFilter = savedWix.ifBlank { defaultWix }
+        oilSpec = savedSpec.ifBlank { defaultSpec }
+
+        if (is2012Chrysler200V6 &&
+            (savedViscosity.isBlank() || savedCapacity.isBlank() || savedWix.isBlank() || savedSpec.isBlank())
+        ) {
+            prefs.edit()
+                .putString("oil_viscosity_$vin", oilViscosity)
+                .putString("oil_capacity_$vin", oilCapacity)
+                .putString("oil_wix_$vin", wixFilter)
+                .putString("oil_spec_$vin", oilSpec)
+                .apply()
+        }
+    }
+    LaunchedEffect(vinValue) {
+        if (vinValue.isNotBlank()) loadOilReference(vinValue)
     }
     fun saveOilReference() {
         prefs.edit()
