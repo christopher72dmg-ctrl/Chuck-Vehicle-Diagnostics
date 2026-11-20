@@ -67,6 +67,7 @@ private fun ChuckApp(context: Context) {
     var vinSource by remember { mutableStateOf(if (vinValue.isBlank()) "" else "SAVED • RECHECK WHEN CONNECTED") }
     var vehicleSummary by remember { mutableStateOf(if (vinValue.isBlank()) "" else VinTools.summary(vinValue)) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showClearInfoConfirm by remember { mutableStateOf(false) }
     var showOilEditor by remember { mutableStateOf(false) }
     var oilViscosity by remember { mutableStateOf(prefs.getString("oil_viscosity_$vinValue", "") ?: "") }
     var oilCapacity by remember { mutableStateOf(prefs.getString("oil_capacity_$vinValue", "") ?: "") }
@@ -216,6 +217,37 @@ private fun ChuckApp(context: Context) {
                     dismissButton = { TextButton(onClick = { showOilEditor = false }) { Text("CANCEL") } }
                 )
             }
+            if (showClearInfoConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showClearInfoConfirm = false },
+                    title = { Text("Clear vehicle information?") },
+                    text = { Text("This clears the VIN and current vehicle/live-data display. Saved oil and filter references for this VIN will remain saved. It will not erase trouble codes from the vehicle.") },
+                    confirmButton = { TextButton(onClick = {
+                        prefs.edit().remove("vin").apply()
+                        vinValue = ""
+                        vinSource = ""
+                        vehicleSummary = ""
+                        vinStatus = "Vehicle VIN has not been requested."
+                        liveRunning = false
+                        liveBusy = false
+                        liveUpdated = ""
+                        liveStatus = "Live readings have not been requested yet."
+                        rpmValue = "—"
+                        coolantValue = "—"
+                        voltsValue = "—"
+                        codeBusy = false
+                        codeStatus = "Stored trouble codes have not been read."
+                        codeResultOk = false
+                        storedCodes = emptyList()
+                        oilViscosity = ""
+                        oilCapacity = ""
+                        wixFilter = ""
+                        oilSpec = ""
+                        showClearInfoConfirm = false
+                    }) { Text("CLEAR") } },
+                    dismissButton = { TextButton(onClick = { showClearInfoConfirm = false }) { Text("CANCEL") } }
+                )
+            }
             if (showInfoDialog) {
                 AlertDialog(
                     onDismissRequest = { showInfoDialog = false },
@@ -243,6 +275,9 @@ private fun ChuckApp(context: Context) {
                                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                                     .setPrimaryClip(ClipData.newPlainText("Vehicle details", all))
                             }, modifier = Modifier.weight(1f)) { Text("COPY ALL") }
+                        }
+                        OutlinedButton(onClick = { showClearInfoConfirm = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF8A80))) {
+                            Text("CLEAR INFO")
                         }
                         Divider(color = Color(0xFF34434D))
                         Text("OIL & FILTER QUICK REFERENCE", color = Accent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
