@@ -200,6 +200,15 @@ private fun ChuckApp(context: Context) {
                                     .setPrimaryClip(ClipData.newPlainText("Vehicle details", all))
                             }, modifier = Modifier.weight(1f)) { Text("COPY ALL") }
                         }
+                        OutlinedButton(
+                            onClick = {
+                                val vehicle = vehicleSummary.ifBlank { VinTools.summary(vinValue) }
+                                val search = "$vehicle VIN $vinValue engine oil viscosity oil capacity with filter"
+                                val url = "https://www.google.com/search?q=" + android.net.Uri.encode(search)
+                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("OIL VISCOSITY & CAPACITY LOOKUP") }
                     }
                 }
             }
